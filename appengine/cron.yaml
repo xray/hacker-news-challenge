@@ -1,0 +1,4 @@
+cron:
+- description: "Updates news from HackerNews every 10 minutes"
+  url: /publish/update-news
+  schedule: every 10 mins
