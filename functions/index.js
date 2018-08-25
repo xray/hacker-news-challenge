@@ -116,6 +116,7 @@ exports.update_news = functions.pubsub.topic('update-news').onPublish((event) =>
         url = story.url;
       }
       storiesData.stories[stories] = {
+        id: story.id,
         title: story.title,
         author: story.by,
         score: story.score,
@@ -141,6 +142,97 @@ exports.update_news = functions.pubsub.topic('update-news').onPublish((event) =>
   }).catch((err) => {
     console.log(err);
     return false;
+  });
+});
+
+exports.testUpdate = functions.https.onRequest((req, res) => {
+  let getStoriesRequests = (idsList = storyIds) => {
+    return new Promise((resolve, reject) => {
+      storiesRequestList = [];
+      for (id in idsList) {
+        storiesRequestList.push(
+          axios.request({
+            responseType: 'json',
+            url: 'https://hacker-news.firebaseio.com/v0/item/' + idsList[id] + '.json',
+            method: 'get'
+          })
+        );
+      }
+      resolve(storiesRequestList);
+    });
+  }
+
+  let allRequests = () => {
+    return new Promise((resolve, reject) => {
+      axios.get('https://hacker-news.firebaseio.com/v0/topstories.json').then((res) => {
+        return res.data;
+      }).then((idList) => {
+        return getStoriesRequests(idList);
+      }).then((reqList) => {
+        return resolve(reqList);
+      }).catch((err) => {
+        return reject(new Error(err));
+      })
+    })
+  }
+
+  let makeRequests = (requests) => {
+    return new Promise((resolve, reject) => {
+      failedRequests = [];
+      let collectedStories = {stories: {}};
+      for (request in requests) {
+        console.log(`Starting ${request} of ${requests.length}`);
+        requests[request].then((response) => {
+          return response.data;
+        }).then((result) => {
+          let url = ""
+          if (result.url === undefined) {
+            url = "No URL";
+          } else {
+            url = result.url;
+          }
+          collectedStories.stories[result.id] = {
+            title: result.title,
+            author: result.by,
+            score: result.score,
+            url: url,
+            time: result.time
+          }
+          return result.id;
+        }).then((data) => {
+          // console.log(`Added "${data}" to list...`);
+          let compareMe = parseInt(request) + 1;
+          console.log(compareMe + "/" + requests.length);
+          if (compareMe >= (requests.length - 1)) {
+            console.log(`Failed Requests: ${failedRequests.length}`);
+            return resolve(collectedStories);
+          } else {
+            // console.log(`Request ${request} of ${requests.length}`);
+            return
+          }
+        }).catch((error) => {
+          // console.error(`There was a problem getting ${error.config.url}...`);
+          console.error(error);
+          failedRequests.push(
+            axios.request({
+              responseType: 'json',
+              url: error.config.url,
+              method: 'get'
+            })
+          );
+          return
+        });
+      }
+    });
+  }
+  
+  allRequests().then((requests) => {
+    return makeRequests(requests);
+  }).then((result) => {
+    return res.status(200).json(result);
+  }).catch((err) => {
+    console.log(err);
+    return res.status(500).send("That didn't work...");
   });
 });
 
